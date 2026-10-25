@@ -1,0 +1,775 @@
+
+```{r}
+#Tyler Jensen, SMU, MSDS
+
+#Case Study Project - FRITO LAY ATTRITION 
+
+#DS 6306
+
+################################################################################
+                         # DATA LOADING AND CLEANUP #
+################################################################################
+
+library(dplyr)
+library(tidyverse)
+library(scales)
+library(ggthemes)
+library(caret)
+library(GGally)
+library(ggplot2)
+library(stringr)
+library(e1071)
+library(class)
+library(pROC)
+library(knitr)
+library(DescTools)
+
+CaseStudy1.data <- read.csv(file.choose())
+view(CaseStudy1.data)
+Frito_base <- CaseStudy1.data
+
+summary(Frito_base)
+
+#Change data types
+Frito_base <- Frito_base %>%
+  mutate(
+    Age = as.numeric(Age),
+    Attrition = as.factor(Attrition),
+    BusinessTravel = as.factor(BusinessTravel),
+    DailyRate = as.numeric(DailyRate),
+    DistanceFromHome = as.numeric(DistanceFromHome),
+    Education = as.factor(Education),
+    EducationField = as.factor(EducationField),
+    EnvironmentSatisfaction = as.factor(EnvironmentSatisfaction),
+    Gender = as.factor(Gender),
+    HourlyRate = as.numeric(HourlyRate),
+    JobInvolvement = as.factor(JobInvolvement),
+    JobLevel = as.factor(JobLevel),
+    JobRole = as.factor(JobRole),
+    JobSatisfaction = as.factor(JobSatisfaction),
+    MaritalStatus = as.factor(MaritalStatus),
+    MonthlyIncome = as.numeric(MonthlyIncome),
+    MonthlyRate = as.numeric(MonthlyRate),
+    NumCompaniesWorked = as.numeric(NumCompaniesWorked),
+    Over18 = as.factor(Over18),
+    OverTime = as.factor(OverTime),
+    PercentSalaryHike = as.numeric(PercentSalaryHike),
+    PerformanceRating = as.factor(PerformanceRating),
+    RelationshipSatisfaction = as.factor(RelationshipSatisfaction),
+    StandardHours = as.numeric(StandardHours),
+    StockOptionLevel = as.factor(StockOptionLevel),
+    TotalWorkingYears = as.numeric(TotalWorkingYears),
+    TrainingTimesLastYear = as.numeric(TrainingTimesLastYear),
+    WorkLifeBalance = as.factor(WorkLifeBalance),
+    YearsAtCompany = as.numeric(YearsAtCompany),
+    YearsInCurrentRole = as.numeric(YearsInCurrentRole),
+    YearsSinceLastPromotion = as.numeric(YearsSinceLastPromotion),
+    YearsWithCurrManager = as.numeric(YearsWithCurrManager)
+  )
+view(Frito_base)
+
+#Develop Attrition into numeric binary
+Frito_base$Attrition_Num <- ifelse(Frito_base$Attrition == "Yes",1,0)
+
+
+#Creating variable groups rather than just numeric values
+age_breaks <- c(0,25,30,40,50,100)
+age_labels <- c("Under 25","26-29","30-39","40-49","50+")
+Frito_base$Age_Groups <- cut(
+  Frito_base$Age, 
+  breaks = age_breaks,
+  labels = age_labels,
+  right = FALSE
+)
+
+Income_breaks <- c(0,2500,5000,7500,10000,12500,15000,17500,20000)
+Income_labels <- c("Under $2,500","$2,500-$4,999","$5,000-$7,499","$7,500-<$9,999","$10,000-$12,499","$12,500-$14,999","$15,000-$17,499","$17,500+")
+Frito_base$Income_Groups <- cut(
+  Frito_base$MonthlyIncome, 
+  breaks = Income_breaks,
+  labels = Income_labels,
+  right = FALSE
+)
+
+HrRate_breaks <- c(0,40,60,80,100)
+HrRate_labels <- c("Under $40","$40-$59","$60-$79","$80+")
+Frito_base$HrRate_Groups <- cut(
+  Frito_base$HourlyRate, 
+  breaks = HrRate_breaks,
+  labels = HrRate_labels,
+  right = FALSE
+)
+
+DailyRate_breaks <- c(0,300,500,700,900,1100,1300,1500)
+DailyRate_labels <- c("Under $300","$300-$500","$500-$700","$700-$900","$900-$1,100","$1,100-$1,300","$1,300+")
+Frito_base$DailyRate_Groups <- cut(
+  Frito_base$DailyRate, 
+  breaks = DailyRate_breaks,
+  labels = DailyRate_labels,
+  right = FALSE
+)
+
+MonthlyRate_breaks <- c(0,6000,10000,14000,18000,22000,28000)
+MonthlyRate_labels <- c("Under $6000","$6000-$10000","$10000-$14000","$14000-$18000","$18000-$22000","$22000+")
+Frito_base$MonthlyRate_Groups <- cut(
+  Frito_base$MonthlyRate, 
+  breaks = MonthlyRate_breaks,
+  labels = MonthlyRate_labels,
+  right = FALSE
+)
+
+Dist_breaks <- c(0,10,20,30)
+Dist_labels <- c("Close","Mid","Far")
+Frito_base$Dist_Group <- cut(
+  Frito_base$DistanceFromHome, 
+  breaks = Dist_breaks,
+  labels = Dist_labels,
+  right = FALSE
+)
+
+Compyears_breaks <- c(0,5,10,15,20,25,30)
+Compyears_labels <- c("<5","5-10","10-15","15-20","20-25","25-30")
+Frito_base$CompYears_Group <- cut(
+  Frito_base$YearsAtCompany, 
+  breaks = Compyears_breaks,
+  labels = Compyears_labels,
+  right = FALSE
+)
+
+Posyears_breaks <- c(0,3,6,9,12,30)
+Posyears_labels <- c("<3","3-6","6-9","9-12","12+")
+Frito_base$PosYears_Group <- cut(
+  Frito_base$YearsInCurrentRole, 
+  breaks = Posyears_breaks,
+  labels = Posyears_labels,
+  right = FALSE
+)
+
+#Group used to evaluate attriton costs according to article offered
+Frito_base <- Frito_base %>%
+  mutate(JobLevelName = case_when(
+    as.numeric(as.character(JobLevel)) %in% c(1, 2) ~ "Entry",
+    as.numeric(as.character(JobLevel)) == 3         ~ "Mid-Tier",
+    as.numeric(as.character(JobLevel)) %in% c(4, 5) ~ "Senior",
+    TRUE                                           ~ NA_character_
+  ))
+
+#Probability of costs used to evaluate attrition costs according to article offered
+Frito_base <- Frito_base %>%
+  mutate(Attrition_Cost_Ratio = case_when(
+    as.numeric(as.character(JobLevel)) %in% c(1, 2) ~ ".4",
+    as.numeric(as.character(JobLevel)) == 3         ~ "1.35",
+    as.numeric(as.character(JobLevel)) %in% c(4, 5) ~ "4",
+    TRUE                                           ~ NA_character_
+  ))
+Frito_base <- Frito_base %>% mutate(Attrition_Cost_Ratio=as.numeric(Attrition_Cost_Ratio))
+
+Frito_base$Attrition_Monthly_Cost = Frito_base$Attrition_Cost_Ratio*Frito_base$MonthlyIncome
+
+Frito_base %>%
+  group_by(JobLevelName) %>%
+  summarise(mean_value = mean(Attrition_Monthly_Cost, na.rm = TRUE))
+
+###Re-ordering data for more logical basis if reviewing data in excel
+Frito_base <- Frito_base %>% 
+  select("Attrition", "Attrition_Num","Attrition_Cost_Ratio","Attrition_Monthly_Cost","HourlyRate","HrRate_Groups","DailyRate", "DailyRate_Groups", "MonthlyRate",
+         "MonthlyRate_Groups", "MonthlyIncome","Income_Groups","PercentSalaryHike","Age","Age_Groups","Gender",
+          "MaritalStatus","Education","EducationField","DistanceFromHome","Dist_Group","OverTime",
+          "Department","JobRole","JobLevel","JobLevelName","JobInvolvement","JobSatisfaction","EnvironmentSatisfaction",
+          "RelationshipSatisfaction","PerformanceRating","WorkLifeBalance","StockOptionLevel","BusinessTravel",
+          "YearsInCurrentRole","PosYears_Group","YearsAtCompany","CompYears_Group","NumCompaniesWorked",
+          "TrainingTimesLastYear","YearsSinceLastPromotion","TotalWorkingYears","YearsWithCurrManager",
+          "StandardHours","EmployeeCount","Over18","EmployeeNumber","ID")
+
+################################################################################
+                    # WHAT IS THE PROBLEM WE NEED TO ADDRESS #
+################################################################################
+
+#Full Company Attrition %
+Company_attrition <- mean(Frito_base$Attrition == "Yes")*100
+print(Company_attrition)
+table((Frito_base$Attrition_Num))
+
+##################################################################################
+                # correlations between attrition and others #
+##################################################################################
+
+### Correlations show impact of each variable against attrition
+### 0 non-impactful, -1 is less attrition with higher variable, 1 is lower attrition with higher variable
+
+cor(Frito_base$Attrition_Num,Frito_base$Age) #-.149                         ->older is less attrition
+cor(Frito_base$Attrition_Num,Frito_base$DailyRate) #-.0338
+cor(Frito_base$Attrition_Num,Frito_base$DistanceFromHome) #-.087            -> farther away = attrition, drop off at 12mile for nonattrition
+cor(Frito_base$Attrition_Num,Frito_base$HourlyRate) #.037
+cor(Frito_base$Attrition_Num,Frito_base$MonthlyIncome) #-.155               ->Monthly income less than $5000 = attrition
+cor(Frito_base$Attrition_Num,Frito_base$MonthlyRate) #-.043
+cor(Frito_base$Attrition_Num,Frito_base$NumCompaniesWorked) #.061
+cor(Frito_base$Attrition_Num,Frito_base$PercentSalaryHike) #.015
+cor(Frito_base$Attrition_Num,Frito_base$TotalWorkingYears) #-.167           ->less than 10 years = attrition
+cor(Frito_base$Attrition_Num,Frito_base$TrainingTimesLastYear) #-.063
+cor(Frito_base$Attrition_Num,Frito_base$YearsAtCompany) #-.129              ->less than 5 years w/company = attrition
+cor(Frito_base$Attrition_Num,Frito_base$YearsInCurrentRole) #-.156          ->current role <3 or 6-7 = attrition
+cor(Frito_base$Attrition_Num,Frito_base$YearsSinceLastPromotion) #-.0046    
+cor(Frito_base$Attrition_Num,Frito_base$YearsWithCurrManager) #-.1468       ->manager <4 or 6-7 = attrition
+
+### Correlations on Factors - Categorical correlations using Chi-Squared and Cramer's V
+Frito_Chi <- table(Frito_base$Attrition, Frito_base$BusinessTravel)          #8%
+chisq.test(Frito_Chi)
+CramerV(Frito_Chi)
+Frito_Chi <- table(Frito_base$Attrition, Frito_base$Department)               #10.4%
+chisq.test(Frito_Chi)
+CramerV(Frito_Chi)
+Frito_Chi <- table(Frito_base$Attrition, Frito_base$Education)               #5.5%
+chisq.test(Frito_Chi)
+CramerV(Frito_Chi)
+Frito_Chi <- table(Frito_base$Attrition, Frito_base$EducationField)          #8.5%
+chisq.test(Frito_Chi)
+CramerV(Frito_Chi)
+Frito_Chi <- table(Frito_base$Attrition, Frito_base$EnvironmentSatisfaction)  #11.3%  Environment Satisfaction
+chisq.test(Frito_Chi)
+CramerV(Frito_Chi)
+Frito_Chi <- table(Frito_base$Attrition, Frito_base$Gender)                  #2.5%
+chisq.test(Frito_Chi)
+CramerV(Frito_Chi)
+Frito_Chi <- table(Frito_base$Attrition, Frito_base$JobInvolvement)          #22%   JobInvolvement
+chisq.test(Frito_Chi)
+CramerV(Frito_Chi)
+Frito_Chi <- table(Frito_base$Attrition, Frito_base$JobLevel)                #22%   Job Level
+chisq.test(Frito_Chi)
+CramerV(Frito_Chi)
+Frito_Chi <- table(Frito_base$Attrition, Frito_base$JobRole)                 #26%   Job Role
+chisq.test(Frito_Chi)
+CramerV(Frito_Chi)
+Frito_Chi <- table(Frito_base$Attrition, Frito_base$JobSatisfaction)          #11.3%
+chisq.test(Frito_Chi)
+CramerV(Frito_Chi)
+Frito_Chi <- table(Frito_base$Attrition, Frito_base$MaritalStatus)          #20% Marital Status
+chisq.test(Frito_Chi)
+CramerV(Frito_Chi)
+Frito_Chi <- table(Frito_base$Attrition, Frito_base$OverTime)                #27% Overtime
+chisq.test(Frito_Chi)
+CramerV(Frito_Chi)
+Frito_Chi <- table(Frito_base$Attrition, Frito_base$PerformanceRating)          #1.5%
+chisq.test(Frito_Chi)
+CramerV(Frito_Chi)
+Frito_Chi <- table(Frito_base$Attrition, Frito_base$RelationshipSatisfaction)          #6%
+chisq.test(Frito_Chi)
+CramerV(Frito_Chi)
+Frito_Chi <- table(Frito_base$Attrition, Frito_base$StockOptionLevel)          #25%  Stock Options
+chisq.test(Frito_Chi)
+CramerV(Frito_Chi)
+Frito_Chi <- table(Frito_base$Attrition, Frito_base$WorkLifeBalance)          #13%    Work Life Balance
+chisq.test(Frito_Chi)
+CramerV(Frito_Chi)
+
+###GGpairs used for comparative analysis between attrition and non-attrition groups for general EDA
+
+Frito_base %>%                                ###demographics -> Younger ages, being single skew towards attrition
+  ggpairs(columns = 3:5,
+  mapping = aes(color = Attrition, alpha = .5))+
+  theme_clean()
+
+Frito_base %>%                                ###compensations -> lower daily rate and monthly income
+  ggpairs(columns = 8:11,
+          mapping = aes(color = Attrition, alpha = .5))+
+  theme_clean()
+
+Frito_base %>%                                ###joblevel, jobinvolve,jobsatis -> lower job level
+  ggpairs(columns = 15:17,
+          mapping = aes(color = Attrition, alpha = .5))+
+  theme_clean()
+
+Frito_base %>%                                ###educ,travel,distfromhome,envirsats -> noise, nontravel w/high distance = attrition
+  ggpairs(columns = 19:22,
+          mapping = aes(color = Attrition, alpha = .5))+
+  theme_clean()
+
+Frito_base %>%                                ###numcompanies,overtime,performance,relationsats -> noise, relationsats minimal
+  ggpairs(columns = 23:26,
+          mapping = aes(color = Attrition, alpha = .5))+
+  theme_clean()
+
+Frito_base %>%                                ###stocks,yearsworked,trainingtime,workbalance -> younger, no stocks
+  ggpairs(columns = 27:30,
+          mapping = aes(color = Attrition, alpha = .5))+
+  theme_clean()
+
+Frito_base %>%                                ###years@comp,yearsinrole,yearspromotion,yearsmanager -> pattern at 1/7
+  ggpairs(columns = 31:34,
+          mapping = aes(color = Attrition, alpha = .5))+
+  theme_clean()
+
+##################################################################################
+                    # Hypothesis considerations #
+#  1. age, compensation largest contributors
+#       age relates to working years and time at company - hone results if possible
+#  2. Distance to office large contributor
+#       being more than 10miles from office significant contributor
+#  3. Job Engagement, Role, and level are key factors to attrition
+#       Engage employees, keep them interested, and advance them to keep them employed
+##################################################################################
+
+##################################################################################
+                  ####  KNN on only Key Attributes to Attrition   ####
+                     ######## Varied Threshold Included  ########
+##################################################################################
+
+# Attrition Cost varied by Employee Type, See "Attrition_Monthly_Cost" and Attrition prob table by JobLevelName
+# Avg Attrition Cost = Job level * Cost * 6-9 months --> 
+#     18.1%*$1643 (Entry) + 12.9%*13300 (Mid) + 7.2%*$67072 (Senior) = $6831/month * 6 months = $40,986/employee
+AttritionCost = 40986
+AttritionIncentive = 200
+threshold = .4      ### Standard is .5
+
+KNN_frito <- Frito_base[,c("JobLevel","JobInvolvement",
+                           "Age", "MonthlyIncome","YearsAtCompany","YearsInCurrentRole","YearsWithCurrManager",
+                           "Attrition")]
+
+KNN_frito_clean <- na.omit(KNN_frito)
+KNN_frito_clean[,1] <- as.numeric(as.factor(KNN_frito_clean[,1]))
+KNN_frito_clean[,2] <- as.numeric(as.factor(KNN_frito_clean[,2]))
+
+view(KNN_frito_clean)
+
+classifications = knn(
+  train = KNN_frito_clean[,1:7],
+  test = KNN_frito_clean[,1:7],
+  cl = KNN_frito_clean[,8],
+  prob = TRUE,
+  k = 10
+)
+table(classifications,KNN_frito_clean[,8],dnn = c("Prediction","Actual"))
+
+CM_KNN = confusionMatrix(table(classifications,KNN_frito_clean[,8]), mode = "everything")
+CM_KNN
+
+#Add Costs
+KNN_Cost_Est = AttritionCost*(CM_KNN$table[3]+CM_KNN$table[4]) + AttritionIncentive*(CM_KNN$table[2])
+KNN_Cost_Attr = AttritionCost*(CM_KNN$table[3]+CM_KNN$table[4])
+KNN_Cost_inc = AttritionIncentive*(CM_KNN$table[2])
+KNN_Cost_Est #Actual Attrition Cost for everyone that leaves + $200 per false predict attrition
+KNN_Cost_Attr
+KNN_Cost_inc
+
+###Simplified KNN model considering pay, location, age, and job level is 83% accurate, but only because it says no one
+### will quit and follows same probability as company roughly. 
+
+### Update Threshold for KNN
+classifications
+attributes(classifications)
+attributes(classifications)$prob #Actual probabilities
+#compute probabilities
+probs = ifelse(classifications == "Yes", attributes(classifications)$prob, 1- attributes(classifications)$prob)
+classifications[1:200]
+probs
+#calculate and display proportion of "Yes attrition" in dataset
+summary(KNN_frito_clean$Attrition)
+threshold = .2
+#Apply new threshold
+LowThreshold = ifelse(probs > threshold, "Yes", "No")
+#Tabulate new classifications v. actuals
+table(LowThreshold,KNN_frito_clean[,8],dnn = c("Predict","Actual"))
+CM_KNN_Thresh = confusionMatrix(table(LowThreshold,KNN_frito_clean[,8]),mode = "everything")
+CM_KNN_Thresh
+KNN_Cost_Thresh = AttritionCost*(CM_KNN_Thresh$table[3]+CM_KNN_Thresh$table[4]) + AttritionIncentive*(CM_KNN_Thresh$table[2])
+KNN_Cost_Thresh
+##################################################################################
+           # Naive Bayes Modelling w/ Varied Thresholds ######
+##################################################################################
+
+### Correlating Factors at 50% ###
+#set.seed(1)
+train_index  <- sample(1:dim(Frito_base)[1], round(.7 * dim(Frito_base)[1]))
+train_data   <- Frito_base[train_index, ]
+test_data    <- Frito_base[-train_index, ]
+
+nb_model_1   <- naiveBayes(Attrition ~ Age_Groups + Income_Groups + JobInvolvement + 
+                             JobLevel + JobRole + YearsAtCompany + YearsInCurrentRole + 
+                             YearsWithCurrManager, data = train_data)
+pred_probs   <- predict(nb_model_1, newdata = test_data, type = "raw")
+pred_classes <- predict(nb_model_1, newdata = test_data, type = "class")
+conf_matrix_1 <- confusionMatrix(data = pred_classes, reference = test_data$Attrition, dnn = c("Prediction", "Actual"))
+print(nb_model_1)
+print(conf_matrix_1)
+
+### 2. Multi-Iteration Loop with Custom Threshold (0.4) ###
+iterations <- 100  # Define how many times you want to split and test
+# Pre-allocate numeric vectors to store metrics
+masterAcc  <- numeric(iterations)
+masterSens <- numeric(iterations)
+masterSpec <- numeric(iterations)
+for (j in 1:iterations) {
+  # New random split per iteration
+  train_index <- sample(1:dim(Frito_base)[1], round(.7 * dim(Frito_base)[1]))
+  train_data  <- Frito_base[train_index, ]
+  test_data   <- Frito_base[-train_index, ]
+  # Train model
+  nb_model_loop <- naiveBayes(Attrition ~ Age_Groups + Income_Groups + JobInvolvement + 
+                                JobLevel + JobRole + YearsAtCompany + YearsInCurrentRole + 
+                                YearsWithCurrManager, data = train_data)
+  # Predict probabilities on the loop's test data
+  pred_probs <- predict(nb_model_loop, newdata = test_data, type = "raw")
+  # Apply the custom 0.4 threshold for "Yes"
+  threshold    <- 0.4
+  pred_classes <- factor(ifelse(pred_probs[, "Yes"] > threshold, "Yes", "No"), 
+                         levels = levels(test_data$Attrition))
+  # Calculate confusion matrix metrics
+  CM_1 <- confusionMatrix(data = pred_classes, reference = test_data$Attrition)
+  # Save metrics into vectors
+  masterAcc[j]  <- CM_1$overall["Accuracy"]
+  masterSens[j] <- CM_1$byClass["Sensitivity"]
+  masterSpec[j] <- CM_1$byClass["Specificity"]
+}
+# Calculate and display the final average performance
+MeanAcc  <- mean(masterAcc)
+MeanSens <- mean(masterSens)
+MeanSpec <- mean(masterSpec)
+MeanAcc
+MeanSens
+MeanSpec
+
+### Kitchen Sink - Includes all provided data, including groupings constructed ###
+#set.seed(1)
+train_index <- sample(1:dim(Frito_base)[1],round(.7*dim(Frito_base)[1]))
+train_data <- Frito_base[train_index,]
+test_data <- Frito_base[-train_index,]
+nb_model_ks <- naiveBayes(
+  Attrition ~ HourlyRate+HrRate_Groups+DailyRate+MonthlyRate+MonthlyIncome+Income_Groups+PercentSalaryHike+
+    Age+Age_Groups+Gender+MaritalStatus+Education+EducationField+DistanceFromHome+Dist_Group+OverTime+Department+
+    JobRole+JobLevel+JobInvolvement+JobSatisfaction+EnvironmentSatisfaction+RelationshipSatisfaction+PerformanceRating+
+    WorkLifeBalance+StockOptionLevel+BusinessTravel+YearsInCurrentRole+PosYears_Group+YearsAtCompany+CompYears_Group+
+    NumCompaniesWorked+TrainingTimesLastYear+YearsSinceLastPromotion+TotalWorkingYears+YearsWithCurrManager, data = train_data)
+pred_probs <- predict(nb_model_ks, newdata = test_data,type="raw")
+pred_classes <- predict(nb_model_ks, newdata = test_data, type = "class")
+conf_matrix_ks <- confusionMatrix(data = pred_classes, 
+                                 reference = test_data$Attrition,
+                                 dnn = c("Prediction","Actual"))
+print(nb_model_ks)
+print(conf_matrix_ks)
+
+### Monte Carlo Simulation with Update Threshold Option###
+set.seed(99)
+iterations = 1000
+masterAcc = matrix(nrow = iterations)
+masterSens = matrix(nrow = iterations)
+masterSpec = matrix(nrow = iterations)
+splitPerc = .7 #Training / Test split Percentage
+for(j in 1:iterations)
+{
+  trainIndices = sample(1:dim(Frito_base)[1],round(.7*dim(Frito_base)[1]))
+  trainks100 = Frito_base[trainIndices,]
+  testks100 = Frito_base[-trainIndices,]
+  nb_model_ks1000 <- naiveBayes(
+    Attrition ~ HourlyRate+HrRate_Groups+DailyRate+MonthlyRate+MonthlyIncome+Income_Groups+PercentSalaryHike+
+      Age+Age_Groups+Gender+MaritalStatus+Education+EducationField+DistanceFromHome+Dist_Group+OverTime+Department+
+      JobRole+JobLevel+JobInvolvement+JobSatisfaction+EnvironmentSatisfaction+RelationshipSatisfaction+PerformanceRating+
+      WorkLifeBalance+StockOptionLevel+BusinessTravel+YearsInCurrentRole+PosYears_Group+YearsAtCompany+CompYears_Group+
+      NumCompaniesWorked+TrainingTimesLastYear+YearsSinceLastPromotion+TotalWorkingYears+YearsWithCurrManager, 
+    data = trainks1000
+  )
+pred_probs = predict(nb_model_ks1000, newdata = testks1000, type = "raw")
+threshold = .4
+pred_classes = factor(ifelse(pred_probs[,"Yes"] > threshold, "Yes","No"),
+                      levels = levels(testks100$Attrition))
+CM_ks1000 = confusionMatrix(data = pred_classes, reference = testks1000$Attrition)
+masterAcc[j] = CM_ks1000$overall["Accuracy"]
+masterSens[j] = CM_ks1000$byClass["Sensitivity"]
+masterSpec[j] = CM_ks1000$byClass["Specificity"]
+}
+MeanAcc = colMeans(masterAcc)
+MeanSens = colMeans(masterSens)
+MeanSpec = colMeans(masterSpec)
+MeanAcc
+MeanSens
+MeanSpec
+
+CM_ks1000                       ### Best results between 100%-0%: 40% combined 78.5% acc, 81% sens, 64% spec ###
+
+##################################################################################
+                   # SUMMARY Data Tables for PowerPoint #
+##################################################################################
+
+############    Company Attrition Characteristics Table - Formatted for PowerPoint ##############
+Age_attrition <- Frito_base %>%
+  group_by(Age_Groups) %>%
+    summarise(
+    total_employees = n(),
+    Ex_employees = sum(Attrition == "Yes"),
+    Attrition_perc = (Ex_employees / total_employees)
+  ) %>%
+  mutate(
+    Attrition_perc = percent(Attrition_perc,accuracy = .1)
+  )
+colnames(Age_attrition) <- c("Age", "Total Employees","Ex Employees","Attrition %")
+print(as.data.frame(Age_attrition),row.names=FALSE)
+
+################  Attrition and Income by Age Group - Formatted for PowerPoint #############
+Income_Attrition <- Frito_base %>%
+  mutate(
+    Income_bracket = cut(MonthlyIncome,Income_breaks,Income_labels)) %>%
+      group_by(Age_Groups, Income_bracket) %>%
+      summarise(
+        total_employees = n(),
+        Ex_employees = sum(Attrition == "Yes"),
+        Attrition_perc = (Ex_employees / total_employees),
+        .groups = "drop"
+      ) %>%
+  mutate(
+    Attrition_perc = percent(Attrition_perc,accuracy = .1)
+  )
+colnames(Income_Attrition) <- c("Age","Monthly Income","Total Employees","Ex Employees","Attrition %")
+print(as.data.frame(Income_Attrition), row.names=FALSE)
+
+############## Attrition and Department by Age Group - Formatted for PowerPoint ############
+Department_Attrition <- Frito_base %>%
+  group_by(Age_Groups, Department) %>%
+  summarise(
+    total_employees = n(),
+    Ex_employees = sum(Attrition == "Yes"),
+    Attrition_perc = (Ex_employees / total_employees),
+    .groups = "drop"
+  ) %>%
+  arrange(Department) %>%
+  mutate(
+    Attrition_perc = percent(Attrition_perc,accuracy = .1)
+  )
+colnames(Department_Attrition) <- c("Age","Department","Total Employees","Ex Employees","Attrition %")
+print(as.data.frame(Department_Attrition), row.names=FALSE)
+
+################ Attrition Cost by Job Level #########################
+Frito_base %>%
+  group_by(JobLevelName) %>%
+  summarise(
+    # 1. Calculate the raw numeric values first
+    Attrition_Count = sum(Attrition == "Yes", na.rm = TRUE),
+    Attrition_Probability = mean(Attrition == "Yes", na.rm = TRUE), # Adjust "Yes" to match your data (e.g., 1 or TRUE)
+    Mean_Monthly_Attrition_Cost = mean(Attrition_Monthly_Cost, na.rm = TRUE),
+    Mean_Attrition_Cost_Ratio = mean(Attrition_Cost_Ratio, na.rm = TRUE)
+  ) %>%
+  mutate(
+    # 2. Format the numbers for the final table display
+    Attrition_Count = number(Attrition_Count),
+    Attrition_Probability = percent(Attrition_Probability, accuracy = 0.1),
+    Mean_Monthly_Attrition_Cost = dollar(Mean_Monthly_Attrition_Cost),
+    Mean_Attrition_Cost_Ratio = percent(Mean_Attrition_Cost_Ratio)
+  ) %>%
+  rename(
+    `Job Level` = JobLevelName,
+    `Attrition Count` = Attrition_Count,
+    `Attrition Probability` = Attrition_Probability,
+    `Mean Monthly Attrition Cost` = Mean_Monthly_Attrition_Cost,
+    `Mean Attrition Cost Ratio` = Mean_Attrition_Cost_Ratio
+  ) %>%
+  kable() # Removes the <chr> tags and backquotes from console view
+
+
+################################################################################
+                           # VISUALS FOR POWERPOINT #
+################################################################################
+
+#############  Age by Monthly Income and Attrition  #############
+Frito_base %>%
+  ggplot(aes(x=Age_Groups, y=MonthlyIncome,fill=Attrition))+
+  geom_boxplot(alpha=.7,position = position_dodge((width=.8)))+
+  labs(
+    title = "Monthly Income by Age Group with Attrition",
+    x = "Age Groups",
+    y = "Monthly Income",
+    fill = "Attrition Status"
+  )+ theme_clean()+
+  scale_y_continuous(labels = label_dollar())
+
+############ Age by Monthly Income All Plotted ###########
+Frito_base %>%
+  ggplot(aes(x=Age_Groups, y=MonthlyIncome, color=Attrition))+
+  geom_jitter(alpha=.5)+
+  stat_summary(
+    fun = mean,
+    geom = "point",
+    shape = 15,
+    size = 3,
+    color = "black",
+    aes(group = 1)
+  )+
+  stat_summary(
+    aes(color=Attrition),
+    fun = mean,
+    geom = "point",
+    shape = 23,
+    size = 5,
+    stroke = 2
+  )+
+  labs(
+    title = "Monthly Income By Age with Attrition",
+    subtitle = "Black Squares - Mean Income All Employees",
+    x = "Age Groups",
+    y = "Monthly Income",
+    color = "Attrition Status"
+  )+
+  theme_clean()+
+  scale_y_continuous(labels = scales::dollar_format())
+
+#########   Attrition by Department = Sales = Higher attrition, investigate?
+Frito_base %>% 
+  filter(Attrition == "Yes") %>% 
+  ggplot(aes(x = JobLevelName, y = Attrition_Monthly_Cost, fill = Department)) +
+  geom_boxplot(alpha = 0.7, position = position_dodge(width = 0.8)) +
+  labs(
+    title = "Attrition Cost by Job Level and Department",
+    x = "Job Level",
+    y = "Monthly Attrition Cost",
+    fill = "Department"
+  ) + 
+  theme_clean() + 
+  scale_y_continuous(labels = scales::dollar_format())
+
+##############   Attrition by JobLevelName  ###########################
+Frito_base %>%
+  filter(Attrition == "Yes") %>% 
+  ggplot(aes(x = JobLevelName, y = Attrition_Monthly_Cost)) +
+  geom_boxplot() + 
+  labs(
+    title = "Monthly Attrition Cost by Job Level",
+    x = "Job Level",
+    y = "Monthly Attrition Cost"
+  ) +
+  theme_clean() +
+  scale_y_continuous(labels = scales::dollar_format())
+
+################################################################################
+        # WORKING SECTION AND UNUSED GRAPHICS FOR CONTINUED ANALYSIS #
+################################################################################
+
+#Age by Hourly/Daily/Monthly RATES = NOISE
+Frito_base %>%
+  ggplot(aes(x=Age_Groups, y=HourlyRate, color=Attrition))+
+  geom_jitter()+
+  labs(
+    title = "Hourly Rate By Age with Attrition",
+    x = "Age Groups",
+    y = "Hourly Rates",
+    color = "Attrition Status"
+  )+
+  theme_clean()
+
+#Attrition by Travel = NOISE
+Frito_base %>%
+  ggplot(aes(x=BusinessTravel, fill=Attrition))+geom_bar(position = "stack")+
+  labs(
+    title="Attrition by Travel",
+    x = "Travel Frequency",
+    y = "Attrition Count"
+  )+
+  theme_clean()
+
+#Attrition by Department = Sales = Higher attrition, R&D higher source of cost
+Frito_base %>%
+  ggplot(aes(x=Department, fill=Attrition))+geom_bar(position = "stack")+
+  labs(
+    title="Attrition by Department",
+    x = "Department",
+    y = "Attrition Count"
+  )+
+  theme_clean()  
+
+#Attrition by Department
+Frito_base %>%
+  count(Department,Attrition) %>%
+  group_by(Department) %>%
+  mutate(percent = n / sum(n)) %>%
+  ungroup() %>%
+  ggplot(aes(x=Department, y = percent, fill=Attrition))+
+  geom_col(position = "fill")+
+  geom_text(
+    aes(label = percent(percent,accuracy = 1)),
+    position = position_fill(vjust = .3),
+    color = "black",
+    size = 4
+  )+
+  scale_y_continuous(labels = scales::percent)+
+  labs(
+    title = "Attrition Rate By Department",
+    x = "Age Groups of Employees",
+    y = "Percent",
+    fill = "Attrition Amount"
+  )+
+  theme_clean()
+
+#Attrition by Job Level - Early starters churn, related to age...
+Frito_base %>%
+  ggplot(aes(x=JobLevel, fill=Attrition))+geom_bar(position = "stack")+
+  labs(
+    title="Attrition by Job Level",
+    x = "Job Level",
+    y = "Attrition"
+  )+
+  theme_clean()  
+  
+#Department by Satisfaction = NOISE
+Frito_base %>%
+  ggplot(aes(x=Department, y=RelationshipSatisfaction, color=Attrition))+
+  geom_jitter()+
+  labs(
+    title = "Hourly Rate By Age with Attrition",
+    x = "Age Groups",
+    y = "Satisfaction Rating",
+    color = "Attrition Status"
+  )+
+  theme_clean()
+  
+#### Years with Company Against Years Current Role ###
+###### DOESN'T SAY MUCH BUT INTERESTING THAT THOSE WHO LEAVE GET STUCK IN THE LONG RUN ########
+Frito_base %>%
+  ggplot(aes(x=YearsAtCompany, y=YearsInCurrentRole, color=Attrition))+
+  geom_jitter(alpha=.5)+
+  stat_summary(
+    fun = mean,
+    geom = "point",
+    shape = 15,
+    size = 3,
+    color = "black",
+    aes(group = 1)
+  )+
+  labs(
+    title = "Monthly Income By Age with Attrition",
+    subtitle = "Black Squares - Mean Income All Employees",
+    x = "Years at Company",
+    y = "Years in Current Role",
+    color = "Attrition Status"
+  )+
+  theme_clean()+
+  geom_smooth()
+
+
+#########################################################################################
+                  ########  Unknown 300 Attrition Competition #########
+#########################################################################################
+CompetitionData <- read.csv(file.choose())
+View(CompetitionData)
+
+Final_nb_model <- naiveBayes(
+  Attrition ~ HourlyRate + HrRate_Groups + DailyRate + MonthlyRate + MonthlyIncome + 
+    Income_Groups + PercentSalaryHike + Age + Age_Groups + Gender + 
+    MaritalStatus + Education + EducationField + DistanceFromHome + 
+    Dist_Group + OverTime + Department + JobRole + JobLevel + 
+    JobInvolvement + JobSatisfaction + EnvironmentSatisfaction + 
+    RelationshipSatisfaction + PerformanceRating + WorkLifeBalance + 
+    StockOptionLevel + BusinessTravel + YearsInCurrentRole + PosYears_Group + 
+    YearsAtCompany + CompYears_Group + NumCompaniesWorked + 
+    TrainingTimesLastYear + YearsSinceLastPromotion + TotalWorkingYears + 
+    YearsWithCurrManager, 
+  data = Frito_base
+)
+# Predict probabilities on competition dataset
+pred_probs_new <- predict(Final_nb_model, newdata = CompetitionData, type = "raw")
+# Apply threshold (0.4) to classify
+threshold <- 0.4
+yes_no_predictions <- ifelse(pred_probs_new[, "Yes"] > threshold, "Yes", "No")
+# Map "Attrition"/"No Attrition" format
+CompetitionData$Predicted_Attrition <- ifelse(yes_no_predictions == "Yes", "Attrition", "No Attrition")
+# Export output
+view(CompetitionData[, c("ID", "Predicted_Attrition")])
+final_export <- CompetitionData[, c("ID","Predicted_Attrition")]
+write.csv(final_export, file = "Case1PredictionsJensenAttrition.csv", row.names = FALSE)
+```
+
