@@ -2,6 +2,7 @@
 Case Study for DS6306
 
 Case study considering attrition against 870 employees using ~30 variables by employee  
+Company Attrition at 16.9%, industry benchmarks below 10%-15% depending on business cycle would be considered healthy  
 Uses EDA, KNN, Naive Bayes to predict attrition  
 Key Attributes: Job Role, Involvement, and Level aka progression in company  
 Secondary Factors: Age, Compensation, Years at Company and in role and with manager  
